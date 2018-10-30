@@ -150,6 +150,8 @@ class Generator(nn.Module):
         return out
 
 
+# TODO: here
+
 class Discriminator(nn.Module):
     '''
     The discriminator is a classical ConvNet classifier.
@@ -162,43 +164,44 @@ class Discriminator(nn.Module):
         self.image_size = image_size
 
         self.conv = nn.Sequential(
-            # input = / output =
-            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=4, padding=1, stride=2),
-            nn.LeakyReLU(),
-            nn.BatchNorm2d(32),
-
-            # input = / output =
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, padding=1, stride=2),
+            # input = bs x 256 x 256 x (1+3) / output = bs x 128 x 128 x 64
+            nn.Conv2d(in_channels=1+3, out_channels=64, kernel_size=4, padding=1, stride=2),
             nn.LeakyReLU(),
             nn.BatchNorm2d(64),
 
-            # input = / output =
+            # input = bs x 128 x 128 x 64 / output = bs x 64 x 64 x 128
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=4, padding=1, stride=2),
             nn.LeakyReLU(),
             nn.BatchNorm2d(128),
 
-            # input = / output =
+            # input = bs x 64 x 64 x 128 / output = bs x 32 x 32 x 256
             nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, padding=1, stride=2),
             nn.LeakyReLU(),
             nn.BatchNorm2d(256),
 
-            # input = / output =
+            # input = bs x 32 x 32 x 256 / output = bs x 16 x 16 x 512
             nn.Conv2d(in_channels=256, out_channels=512, kernel_size=4, padding=1, stride=2),
+            nn.LeakyReLU(),
+            nn.BatchNorm2d(512),
+
+            # input = bs x 16 x 16 x 512 / output = bs x 8 x 8 x 1
+            nn.Conv2d(in_channels=512, out_channels=1, kernel_size=4, padding=1, stride=2),
             nn.LeakyReLU(),
             nn.BatchNorm2d(512),
         )
 
+        #TODO: I'm not sure about the last layers in the discriminator
+
         self.fc = nn.Sequential(
-            nn.Linear(in_features=int(self.image_size/(2**5)) * int((self.image_size/(2**5))) * 512, out_features=1024),
+            nn.Linear(in_features=int(self.image_size/(2**5)) * int((self.image_size/(2**5))) * 1, out_features=16),
             nn.LeakyReLU(),
-            nn.Linear(in_features=1024, out_features=1),
+            nn.Linear(in_features=16, out_features=1),
         )
 
-    def forward(self, x):
-        #conc_clr_bw = torch.cat((x1, x2), 1)
-
-        result = self.conv(x)
-        result = result.view(-1, int(self.image_size/(2**5)) * int(self.image_size/(2**5) * 512))
+    def forward(self, clr, bw):
+        conc_clr_bw = torch.cat((clr, bw), 1)
+        result = self.conv(conc_clr_bw)
+        result = result.view(-1, int(self.image_size/(2**5)) * int(self.image_size/(2**5) * 1))
         result = self.fc(result)
         result = torch.sigmoid(result)
         return result
@@ -259,6 +262,8 @@ class GAN(object):
         '''
         Training loop for the GAN
         '''
+
+        EPS = 1e-12
         
         use_gpu = torch.cuda.is_available()
         if use_gpu:
@@ -300,11 +305,11 @@ class GAN(object):
                 # TODO : detach ?
                 #Gx = gen_model(bw_img).detach() # Generates fake colored images
                 Gx = gen_model(bw_img)
-                Dx = dis_model(clr_img) # Produces probabilities for real images
-                Dg = dis_model(Gx) # Produces probabilities for generator images
+                Dx = dis_model(clr_img)  # Produces probabilities for real images
+                Dg = dis_model(Gx)  # Produces probabilities for generator images
 
-                d_loss = -torch.mean(torch.log(Dx+0.0001) + torch.log(1.-Dg+0.0001)) # Loss function of the discriminator.
-                g_loss = -torch.mean(torch.log(Dg+0.0001)) # Loss function of the generator.
+                d_loss = -torch.mean(torch.log(Dx+EPS) + torch.log(1.-Dg+EPS)) # Loss function of the discriminator.
+                g_loss = -torch.mean(torch.log(Dg+EPS)) # Loss function of the generator.
 
                 if L1_loss:
                     g_loss = g_loss + lambda_L1 * L1_loss(Gx, clr_img)
