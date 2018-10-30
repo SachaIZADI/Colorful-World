@@ -122,7 +122,7 @@ class Generator(nn.Module):
         )
         # input = bs x 128 x 128 x 2*64 / output = bs x 256 x 256 x 3
         self.decodout = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=2*64, out_channels=3, kernel_size=4, padding=1, stride=2),
+            nn.ConvTranspose2d(in_channels=2 * 64, out_channels=3, kernel_size=4, padding=1, stride=2),
             nn.Tanh())
 
     def forward(self, x):
@@ -187,7 +187,6 @@ class Discriminator(nn.Module):
             # input = bs x 16 x 16 x 512 / output = bs x 8 x 8 x 1
             nn.Conv2d(in_channels=512, out_channels=1, kernel_size=4, padding=1, stride=2),
             nn.LeakyReLU(),
-            nn.BatchNorm2d(512),
         )
 
         #TODO: I'm not sure about the last layers in the discriminator
@@ -279,6 +278,8 @@ class GAN(object):
         dis_loss = np.zeros(n_epochs)
         gen_loss = np.zeros(n_epochs)
 
+        t = 0
+
         for epoch_num in range(n_epochs):
 
             dis_running_loss = 0.0
@@ -303,10 +304,12 @@ class GAN(object):
 
 
                 # TODO : detach ?
-                #Gx = gen_model(bw_img).detach() # Generates fake colored images
-                Gx = gen_model(bw_img)
-                Dx = dis_model(clr_img)  # Produces probabilities for real images
-                Dg = dis_model(Gx)  # Produces probabilities for generator images
+                if t%2==0:
+                    Gx = gen_model(bw_img).detach() # Generates fake colored images
+                else :
+                    Gx = gen_model(bw_img)
+                Dx = dis_model(clr_img,bw_img)  # Produces probabilities for real images
+                Dg = dis_model(Gx,bw_img)  # Produces probabilities for generator images
 
                 d_loss = -torch.mean(torch.log(Dx+EPS) + torch.log(1.-Dg+EPS)) # Loss function of the discriminator.
                 g_loss = -torch.mean(torch.log(Dg+EPS)) # Loss function of the generator.
@@ -316,13 +319,17 @@ class GAN(object):
 
                 # Run backprop and update the weights of the Generator accordingly
                 dis_running_loss += d_loss.data.cpu().numpy()
-                d_loss.backward(retain_graph=True)
-                dis_optimizer.step()
+                if t%2 == 0:
+                    d_loss.backward()
+                    dis_optimizer.step()
 
                 # Run backprop and update the weights of the Discriminator accordingly
                 gen_running_loss += g_loss.data.cpu().numpy()
-                g_loss.backward()
-                gen_optimizer.step()
+                if t%2==1:
+                    g_loss.backward()
+                    gen_optimizer.step()
+
+                t += 1
 
 
             epoch_dis_loss = dis_running_loss / size
@@ -419,7 +426,8 @@ class GAN(object):
         Generate colored images from an initial b&w image
         '''
         # Load a model with which to make the prediction
-        self.predict_generator = torch.load(self.config.model_dir + 'gen_model_9.pk')
+        self.predict_generator = torch.load(self.config.model_dir + 'gen_model_%s.pk'%str(self.config.n_epochs-1))
+        self.predict_generator.eval()
         
         return self.predicting(self.predict_generator, self.prediction_data_loader)
         
